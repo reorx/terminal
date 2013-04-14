@@ -28,4 +28,9 @@ for color_name in color._colors:
         print color_func(style_func(text)), ' <- %s(%s)' % (color_name, style_name)
 
 print '\n\nComplex combinations\n'
-print color.italic(color.bold(color.red(text))), ' <- italic+bold+red'
+print color.inverse(color.bold(color.red(text))), ' <- inverse+bold+red\n'
+print color.blink(color.bold(color.red(text))), ' <- blink+bold+red\n'
+print color.underline(color.bold(color.red(text))), ' <- underline+bold+red\n'
+print color.inverse(color.blink(color.red(text))), ' <- inverse+blink+red\n'
+print color.blink(color.underline(color.red(text))), ' <- blink+underline+red\n'
+print color.underline(color.inverse(color.red(text))), ' <- underline+inverse+red\n'
