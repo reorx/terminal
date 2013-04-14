@@ -26,3 +26,6 @@ for color_name in color._colors:
     for style_name in color._styles:
         style_func = getattr(color, style_name)
         print color_func(style_func(text)), ' <- %s(%s)' % (color_name, style_name)
+
+print '\n\nComplex combinations\n'
+print color.italic(color.bold(color.red(text))), ' <- italic+bold+red'

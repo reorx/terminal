@@ -9,7 +9,7 @@ else:
     string_type = basestring
 
 
-def is_color_supported():
+def check_color_support():
     "Find out if your terminal environment supports color."
     # shinx.util.console
     if not hasattr(sys.stdout, 'isatty'):
@@ -33,12 +33,18 @@ def is_color_supported():
     return term in ('xterm', 'linux') or 'color' in term
 
 
-def is_256color_supported():
+_is_color_supported = check_color_support()
+
+
+def check_256color_support():
     "Find out if your terminal environment supports 256 color."
-    if not is_color_supported():
+    if not _is_color_supported:
         return False
     term = os.environ.get('TERM', 'dumb').lower()
     return '256' in term
+
+
+_is_256color_supported = check_256color_support()
 
 
 def rgb2ansi(r, g, b):
@@ -96,7 +102,7 @@ _colors = (
 
 class Color(object):
     """
-    Color object for painters.
+    Color object that holds the text and relevant color and style settings.
 
     You should always use the high-level API of colors and styles,
     such as :class:`red` and :class:`bold`.
@@ -108,13 +114,36 @@ class Color(object):
         print(c.bold.red.italic)
 
     """
+    default_encoding = sys.stdout.encoding
 
-    def __init__(self, *items):
-        self.items = items
+    def __init__(self, raw, fgcolor=None, bgcolor=None, styles=None):
+        if isinstance(raw, str):
+            self.unicode_text = self.str_to_unicode(raw)
+        elif isinstance(raw, unicode):
+            self.unicode_text = raw
+        elif isinstance(raw, Color):
+            self.unicode_text = raw.unicode_text
+            # Merge colors and styles
+            if fgcolor is None:
+                fgcolor = raw.fgcolor
+            if bgcolor is None:
+                bgcolor = raw.bgcolor
+            if styles is None:
+                styles = raw.styles
+            else:
+                styles = list(set(styles + raw.styles))
+        else:
+            raise ValueError('Only unicode and str types are allowed')
 
-        self.styles = []
-        self.fgcolor = None
-        self.bgcolor = None
+        self.fgcolor = fgcolor
+        self.bgcolor = bgcolor
+        self.styles = styles or []
+
+    def str_to_unicode(self, s):
+        return s.decode(self.default_encoding)
+
+    def unicode_to_str(self, u):
+        return u.encode(self.default_encoding)
 
     def __getattr__(self, key):
         if key.endswith('_bg'):
@@ -138,49 +167,34 @@ class Color(object):
             raise AttributeError("Color has no attribute '%s'" % key)
 
     def __str__(self):
-        return unicode(self).encode('utf-8')
+        return self.unicode_to_str(self.__unicode__())
 
     def __unicode__(self):
-        text = ''.join(unicode(item) for item in self.items)
-        if not is_color_supported():
-            return text
+        if not _is_color_supported:
+            return self.unicode_text
 
-        is256 = is_256color_supported()
-        if is256:
+        decorated = self.unicode_text
+
+        if _is_256color_supported:
             if self.fgcolor is not None:
-                text = '\x1b[38;5;%im%s%s' % (self.fgcolor, text, _reset)
+                decorated = '\x1b[38;5;%im%s%s' % (self.fgcolor, decorated, _reset)
             if self.bgcolor is not None:
-                text = '\x1b[48;5;%im%s%s' % (self.bgcolor, text, _reset)
-
+                decorated = '\x1b[48;5;%im%s%s' % (self.bgcolor, decorated, _reset)
         else:
             if self.fgcolor is not None and self.fgcolor < 8:
-                text = '\x1b[%im%s%s' % (30 + self.fgcolor, text, _reset)
+                decorated = '\x1b[%im%s%s' % (30 + self.fgcolor, decorated, _reset)
             if self.bgcolor is not None and self.bgcolor < 8:
-                text = '\x1b[%im%s%s' % (40 + self.bgcolor, text, _reset)
+                decorated = '\x1b[%im%s%s' % (40 + self.bgcolor, decorated, _reset)
 
         if self.styles:
             code = ';'.join(str(i) for i in self.styles)
-            text = '\x1b[%sm%s%s' % (code, text, _reset)
+            decorated = '\x1b[%sm%s%s' % (code, decorated, _reset)
 
-        return text
+        return decorated
 
     def __repr__(self):
-        return repr(unicode(self))
-
-    def __len__(self):
-        return sum([len(item) for item in self.items])
-
-    def __add__(self, s):
-        if not isinstance(s, (string_type, Color)):
-            msg = "Concatenatation failed: %r + %r (Not a ColorString or str)"
-            raise TypeError(msg % (type(s), type(self)))
-        return Color(self, s)
-
-    def __radd__(self, s):
-        if not isinstance(s, (string_type, Color)):
-            msg = "Concatenatation failed: %r + %r (Not a ColorString or str)"
-            raise TypeError(msg % (type(s), type(self)))
-        return Color(s, self)
+        return 'Color(%s, fgcolor=%s, bgcolor=%s, styles=%s)' %\
+               (repr(self.unicode_text), self.fgcolor, self.bgcolor, self.styles)
 
 
 def colorize(text, color):
@@ -222,216 +236,81 @@ def colorize(text, color):
     return c
 
 
-def _create_color_func(text, fgcolor=None, bgcolor=None, *styles):
-    c = Color(text)
-    c.fgcolor = fgcolor
-    c.bgcolor = bgcolor
-    c.styles = styles
-    return c
+def _create_color_func(fgcolor=None, bgcolor=None, styles=None):
+    def color_func(text):
+        c = Color(text, fgcolor=fgcolor, bgcolor=bgcolor, styles=styles)
+        return c
+    return color_func
 
 
-def bold(text):
-    """
-    Bold style.
-    """
-    return _create_color_func(text, None, None, 1)
+# Style functions
+
+bold = _create_color_func(styles=[1])
+
+faint = _create_color_func(styles=[2])
+
+italic = _create_color_func(styles=[3])
+
+underline = _create_color_func(styles=[4])
+
+blink = _create_color_func(styles=[5])
+
+overline = _create_color_func(styles=[6])
+
+inverse = _create_color_func(styles=[7])
+
+conceal = _create_color_func(styles=[8])
+
+strike = _create_color_func(styles=[9])
 
 
-def faint(text):
-    """
-    Faint style.
-    """
-    return _create_color_func(text, None, None, 2)
+# Color functions
+
+black = _create_color_func(fgcolor=0)
+
+red = _create_color_func(fgcolor=1)
+
+green = _create_color_func(fgcolor=2)
+
+yellow = _create_color_func(fgcolor=3)
+
+blue = _create_color_func(fgcolor=4)
+
+magenta = _create_color_func(fgcolor=5)
+
+cyan = _create_color_func(fgcolor=6)
+
+white = _create_color_func(fgcolor=7)
+
+if _is_256color_supported:
+    gray = _create_color_func(fgcolor=8)
+else:
+    gray = _create_color_func(fgcolor=0, styles=[8])
+
+grey = gray
 
 
-def italic(text):
-    """
-    Italic style.
-    """
-    return _create_color_func(text, None, None, 3)
+# Background functions
 
+black_bg = _create_color_func(bgcolor=0)
 
-def underline(text):
-    """
-    Underline style.
-    """
-    return _create_color_func(text, None, None, 4)
+red_bg = _create_color_func(bgcolor=1)
 
+green_bg = _create_color_func(bgcolor=2)
 
-def blink(text):
-    """
-    Blink style.
-    """
-    return _create_color_func(text, None, None, 5)
+yellow_bg = _create_color_func(bgcolor=3)
 
+blue_bg = _create_color_func(bgcolor=4)
 
-def overline(text):
-    """
-    Overline style.
-    """
-    return _create_color_func(text, None, None, 6)
+magenta_bg = _create_color_func(bgcolor=5)
 
+cyan_bg = _create_color_func(bgcolor=6)
 
-def inverse(text):
-    """
-    Inverse style.
-    """
-    return _create_color_func(text, None, None, 7)
+white_bg = _create_color_func(bgcolor=7)
 
+if _is_256color_supported:
+    gray_bg = _create_color_func(bgcolor=8)
+else:
+    gray_bg = _create_color_func(bgcolor=0, styles=[1])
 
-def conceal(text):
-    """
-    Conceal style.
-    """
-    return _create_color_func(text, None, None, 8)
-
-
-def strike(text):
-    """
-    Strike style.
-    """
-    return _create_color_func(text, None, None, 9)
-
-
-def black(text):
-    """
-    Black color.
-    """
-    return _create_color_func(text, fgcolor=0)
-
-
-def red(text):
-    """
-    Red color.
-    """
-    return _create_color_func(text, fgcolor=1)
-
-
-def green(text):
-    """
-    Green color.
-    """
-    return _create_color_func(text, fgcolor=2)
-
-
-def yellow(text):
-    """
-    Yellow color.
-    """
-    return _create_color_func(text, fgcolor=3)
-
-
-def blue(text):
-    """
-    Blue color.
-    """
-    return _create_color_func(text, fgcolor=4)
-
-
-def magenta(text):
-    """
-    Magenta color.
-    """
-    return _create_color_func(text, fgcolor=5)
-
-
-def cyan(text):
-    """
-    Cyan color.
-    """
-    return _create_color_func(text, fgcolor=6)
-
-
-def white(text):
-    """
-    White color.
-    """
-    return _create_color_func(text, fgcolor=7)
-
-
-def gray(text):
-    """
-    Gray color.
-    """
-    if is_256color_supported():
-        return _create_color_func(text, fgcolor=8)
-    return _create_color_func(text, 0, None, 8)
-
-
-def grey(text):
-    """
-    Alias of gray.
-    """
-    return gray(text)
-
-
-def black_bg(text):
-    """
-    Black background.
-    """
-    return _create_color_func(text, bgcolor=0)
-
-
-def red_bg(text):
-    """
-    Red background.
-    """
-    return _create_color_func(text, bgcolor=1)
-
-
-def green_bg(text):
-    """
-    Green background.
-    """
-    return _create_color_func(text, bgcolor=2)
-
-
-def yellow_bg(text):
-    """
-    Yellow background.
-    """
-    return _create_color_func(text, bgcolor=3)
-
-
-def blue_bg(text):
-    """
-    Blue background.
-    """
-    return _create_color_func(text, bgcolor=4)
-
-
-def magenta_bg(text):
-    """
-    Magenta background.
-    """
-    return _create_color_func(text, bgcolor=5)
-
-
-def cyan_bg(text):
-    """
-    Cyan background.
-    """
-    return _create_color_func(text, bgcolor=6)
-
-
-def white_bg(text):
-    """
-    White background.
-    """
-    return _create_color_func(text, bgcolor=7)
-
-
-def gray_bg(text):
-    """
-    Gray background.
-    """
-    if is_256color_supported():
-        return _create_color_func(text, bgcolor=8)
-    return _create_color_func(text, None, 0, 1)
-
-
-def grey_bg(text):
-    """
-    Alias of gray_bg.
-    """
-    return gray_bg(text)
+grey_bg = gray_bg
