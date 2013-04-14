@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
+
+# http://en.wikipedia.org/wiki/ANSI_escape_code
+# http://en.wikipedia.org/wiki/Web_colors
+# https://gist.github.com/MicahElliott/719710
+
 import os
 import sys
 
 # Python 3
 if sys.version_info[0] == 3:
     string_type = str
+    unicode = str
 else:
     string_type = basestring
 
@@ -51,6 +57,9 @@ def rgb2ansi(r, g, b):
     """
     Convert an RGB color to 256 ansi graphics.
     """
+
+    # Thanks to
+    # https://github.com/tehmaze/ansi/blob/master/ansi/colour/rgb.py
 
     grayscale = False
     poss = True
@@ -100,6 +109,18 @@ _colors = (
 )
 
 
+def _color2ansi(color):
+    if color in _colors:
+        return _colors.index(color)
+
+    if isinstance(color, string_type):
+        return hex2ansi(color)
+    elif isinstance(color, (tuple, list)):
+        return rgb2ansi(*color)
+
+    raise ValueError('invalid color: %s' % color)
+
+
 class Color(object):
     """
     Color object that holds the text and relevant color and style settings.
@@ -110,9 +131,10 @@ class Color(object):
     But if you are so interested in this module, you are welcome to
     use some advanced features::
 
-        c = Color('text')
-        print(c.bold.red.italic)
+        s = Color('text')
+        print(s.bold.red.italic)
 
+    All ANSI colors and styles are available on Color.
     """
     default_encoding = sys.stdout.encoding
 
@@ -133,7 +155,14 @@ class Color(object):
             else:
                 styles = list(set(styles + raw.styles))
         else:
-            raise ValueError('Only unicode and str types are allowed')
+            raise ValueError('Only unicode and str types'
+                             'or instance of Color are allowed')
+
+        if fgcolor and not isinstance(fgcolor, int):
+            fgcolor = _color2ansi(fgcolor)
+
+        if bgcolor and not isinstance(bgcolor, int):
+            bgcolor = _color2ansi(bgcolor)
 
         self.fgcolor = fgcolor
         self.bgcolor = bgcolor
@@ -217,22 +246,8 @@ def colorize(text, color):
         c.styles = [_styles.index(color) + 1]
         return c
 
-    if color in _colors:
-        c = Color(text)
-        c.fgcolor = _colors.index(color)
-        return c
-
-    code = None
-    if isinstance(color, string_type):
-        code = hex2ansi(color)
-    elif isinstance(color, (tuple, list)):
-        code = rgb2ansi(*color)
-
-    if not code:
-        return text
-
     c = Color(text)
-    c.fgcolor = code
+    c.fgcolor = _color2ansi(color)
     return c
 
 
